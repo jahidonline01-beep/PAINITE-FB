@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Painite FB</string>
+    <string name="create_account">Create Account</string>
+    <string name="login">Log In</string>
+    <string name="home">Home</string>
+    <string name="cookies">Cookies</string>
+    <string name="reload">Reload</string>
+    <string name="back">Back</string>
+    <string name="forward">Forward</string>
+    <string name="clear_data">Clear Data</string>
+    <string name="tools">Tools</string>
+</resources>
