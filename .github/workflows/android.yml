@@ -1,0 +1,207 @@
+name: Build Native Android APK
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build APK
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Reconstruct Android project structure (if uploaded flat)
+        run: |
+          set -e
+          echo "=== Repo root ==="
+          ls -la
+
+          if [ -d app/src/main ] && [ -f settings.gradle.kts ]; then
+            echo "Project structure OK."
+            exit 0
+          fi
+
+          echo "Flat layout detected — rebuilding standard Android folders..."
+
+          mkdir -p app/src/main/java/com/painitefb/app
+          mkdir -p app/src/main/res/layout
+          mkdir -p app/src/main/res/values
+          mkdir -p app/src/main/res/drawable
+          mkdir -p app/src/main/res/xml
+          mkdir -p app/src/main/res/mipmap-mdpi
+          mkdir -p app/src/main/res/mipmap-hdpi
+          mkdir -p app/src/main/res/mipmap-xhdpi
+          mkdir -p app/src/main/res/mipmap-xxhdpi
+          mkdir -p app/src/main/res/mipmap-xxxhdpi
+          mkdir -p gradle/wrapper
+
+          for f in MainActivity.kt CookiesActivity.kt ToolsActivity.kt UsaGenerator.kt TotpHelper.kt; do
+            [ -f "$f" ] && mv -f "$f" "app/src/main/java/com/painitefb/app/$f" && echo "moved $f"
+          done
+
+          [ -f AndroidManifest.xml ] && mv -f AndroidManifest.xml app/src/main/AndroidManifest.xml
+
+          for f in activity_main.xml activity_cookies.xml activity_tools.xml; do
+            [ -f "$f" ] && mv -f "$f" "app/src/main/res/layout/$f"
+          done
+
+          for f in colors.xml strings.xml themes.xml; do
+            [ -f "$f" ] && mv -f "$f" "app/src/main/res/values/$f"
+          done
+
+          for f in bg_pro_badge.xml bg_toolbar_gradient.xml bg_top_icon.xml bg_fb_circle.xml bg_card_white.xml bg_2fa_card.xml bg_splash.xml bg_launch_home.xml bg_nav_chip.xml bg_card_elevated.xml bg_addfd_row.xml ic_telegram.xml ic_moon.xml; do
+            [ -f "$f" ] && mv -f "$f" "app/src/main/res/drawable/$f"
+          done
+
+          [ -f network_security_config.xml ] && mv -f network_security_config.xml app/src/main/res/xml/network_security_config.xml
+
+          if [ -f ic_launcher.png ]; then
+            for d in mdpi hdpi xhdpi xxhdpi xxxhdpi; do
+              cp ic_launcher.png "app/src/main/res/mipmap-${d}/ic_launcher.png"
+              if [ -f ic_launcher_round.png ]; then
+                cp ic_launcher_round.png "app/src/main/res/mipmap-${d}/ic_launcher_round.png"
+              else
+                cp ic_launcher.png "app/src/main/res/mipmap-${d}/ic_launcher_round.png"
+              fi
+            done
+            rm -f ic_launcher.png ic_launcher_round.png
+          fi
+
+          # App module build file (has applicationId)
+          if [ -f build.gradle.kts ] && grep -q 'applicationId' build.gradle.kts; then
+            mv -f build.gradle.kts app/build.gradle.kts
+          fi
+          if [ ! -f app/build.gradle.kts ]; then
+            printf '%s\n' \
+              'plugins {' \
+              '    id("com.android.application")' \
+              '    id("org.jetbrains.kotlin.android")' \
+              '}' \
+              '' \
+              'android {' \
+              '    namespace = "com.painitefb.app"' \
+              '    compileSdk = 35' \
+              '    defaultConfig {' \
+              '        applicationId = "com.painitefb.app"' \
+              '        minSdk = 24' \
+              '        targetSdk = 35' \
+              '        versionCode = 1' \
+              '        versionName = "1.0.0"' \
+              '    }' \
+              '    buildTypes {' \
+              '        release {' \
+              '            isMinifyEnabled = false' \
+              '        }' \
+              '    }' \
+              '    compileOptions {' \
+              '        sourceCompatibility = JavaVersion.VERSION_17' \
+              '        targetCompatibility = JavaVersion.VERSION_17' \
+              '    }' \
+              '    kotlinOptions { jvmTarget = "17" }' \
+              '    buildFeatures { viewBinding = true }' \
+              '}' \
+              '' \
+              'dependencies {' \
+              '    implementation("androidx.core:core-ktx:1.15.0")' \
+              '    implementation("androidx.appcompat:appcompat:1.7.0")' \
+              '    implementation("com.google.android.material:material:1.12.0")' \
+              '    implementation("androidx.constraintlayout:constraintlayout:2.2.0")' \
+              '    implementation("androidx.swiperefreshlayout:swiperefreshlayout:1.1.0")' \
+              '    implementation("androidx.webkit:webkit:1.12.1")' \
+              '}' \
+              > app/build.gradle.kts
+          fi
+
+          # Root build.gradle.kts
+          if [ -f root-build.gradle.kts ]; then
+            mv -f root-build.gradle.kts build.gradle.kts
+          elif [ ! -f build.gradle.kts ] || grep -q 'applicationId' build.gradle.kts 2>/dev/null; then
+            printf '%s\n' \
+              'plugins {' \
+              '    id("com.android.application") version "8.7.3" apply false' \
+              '    id("org.jetbrains.kotlin.android") version "2.0.21" apply false' \
+              '}' \
+              > build.gradle.kts
+          fi
+
+          if [ -f proguard-rules.pro ]; then
+            mv -f proguard-rules.pro app/proguard-rules.pro
+          else
+            echo '# Painite FB' > app/proguard-rules.pro
+          fi
+
+          if [ -f gradle-wrapper.properties ]; then
+            mv -f gradle-wrapper.properties gradle/wrapper/gradle-wrapper.properties
+          else
+            printf '%s\n' \
+              'distributionBase=GRADLE_USER_HOME' \
+              'distributionPath=wrapper/dists' \
+              'distributionUrl=https\://services.gradle.org/distributions/gradle-8.9-bin.zip' \
+              'networkTimeout=10000' \
+              'validateDistributionUrl=true' \
+              'zipStoreBase=GRADLE_USER_HOME' \
+              'zipStorePath=wrapper/dists' \
+              > gradle/wrapper/gradle-wrapper.properties
+          fi
+
+          if [ ! -f settings.gradle.kts ]; then
+            printf '%s\n' \
+              'pluginManagement {' \
+              '    repositories { google(); mavenCentral(); gradlePluginPortal() }' \
+              '}' \
+              'dependencyResolutionManagement {' \
+              '    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)' \
+              '    repositories { google(); mavenCentral() }' \
+              '}' \
+              'rootProject.name = "PainiteFB"' \
+              'include(":app")' \
+              > settings.gradle.kts
+          fi
+
+          if [ ! -f gradle.properties ]; then
+            printf '%s\n' \
+              'org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8' \
+              'android.useAndroidX=true' \
+              'kotlin.code.style=official' \
+              'android.nonTransitiveRClass=true' \
+              > gradle.properties
+          fi
+
+          echo "=== After reconstruct ==="
+          find . -type f -not -path './.git/*' | sort | head -80
+
+          test -f app/src/main/java/com/painitefb/app/MainActivity.kt
+          test -f app/src/main/AndroidManifest.xml
+          test -f app/build.gradle.kts
+          echo "Reconstruct OK"
+
+      - name: Setup JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Create Gradle Wrapper
+        run: |
+          gradle wrapper --gradle-version 8.9
+          chmod +x gradlew
+
+      - name: Build Debug APK
+        run: ./gradlew assembleDebug --stacktrace
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: PainiteFB-Native-APK
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
